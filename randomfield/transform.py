@@ -6,7 +6,15 @@ from __future__ import print_function, division
 
 import numpy as np
 
-
+try:
+    import pyfftw
+    have_pyfftw_=True
+except ImportError:
+    print ("WARNING: cannot import pyfftw, " +
+           "FFT transforms will be slow and memory inefficient.");
+    print ("You could try 'pip install pyfftw'")
+    have_pyfftw_=False
+    
 def allocate(shape, dtype, use_pyfftw=True):
     """
     Allocate a contiguous block of un-initialized typed memory.
@@ -33,13 +41,9 @@ def allocate(shape, dtype, use_pyfftw=True):
         The storage order of multi-dimensional arrays is always C-type
         (row-major).
     """
-    if use_pyfftw:
-        try:
-            import pyfftw
-            return pyfftw.n_byte_align_empty(
-                shape, pyfftw.simd_alignment, dtype, order='C')
-        except:
-            pass
+    if use_pyfftw and have_pyfftw_:
+        return pyfftw.n_byte_align_empty(
+            shape, pyfftw.simd_alignment, dtype, order='C')
     return np.empty(shape, dtype, order='C')
 
 
@@ -244,26 +248,20 @@ class Plan(object):
             self.nbytes_allocated += self.data_out.nbytes
 
         # Try to use pyFFTW to configure the transform, if requested.
-        self.use_pyfftw = use_pyfftw
+        self.use_pyfftw = use_pyfftw and have_pyfftw_
         if self.use_pyfftw:
-            try:
-                import pyfftw
-                if not pyfftw.is_n_byte_aligned(self.data_in,
-                                                pyfftw.simd_alignment):
-                    raise ValueError('data_in is not SIMD aligned.')
-                if not pyfftw.is_n_byte_aligned(self.data_out,
-                                                pyfftw.simd_alignment):
-                    raise ValueError('data_out is not SIMD aligned.')
-                direction = 'FFTW_BACKWARD' if inverse else 'FFTW_FORWARD'
-                self.fftw_plan = pyfftw.FFTW(
-                    self.data_in, self.data_out, direction=direction,
-                    flags=('FFTW_ESTIMATE',), axes=(0, 1, 2))
-                self.fftw_norm = np.float(nx * ny * nz if inverse else 1)
-            except ImportError:
-                self.use_pyfftw = False
-
-        # Fall back to numpy.fft if we are not using pyFFTW.
-        if not self.use_pyfftw:
+            if not pyfftw.is_n_byte_aligned(self.data_in,
+                                            pyfftw.simd_alignment):
+                raise ValueError('data_in is not SIMD aligned.')
+            if not pyfftw.is_n_byte_aligned(self.data_out,
+                                            pyfftw.simd_alignment):
+                raise ValueError('data_out is not SIMD aligned.')
+            direction = 'FFTW_BACKWARD' if inverse else 'FFTW_FORWARD'
+            self.fftw_plan = pyfftw.FFTW(
+                self.data_in, self.data_out, direction=direction,
+                flags=('FFTW_ESTIMATE',), axes=(0, 1, 2))
+            self.fftw_norm = np.float(nx * ny * nz if inverse else 1)
+        else:
             if inverse:
                 self.transformer = np.fft.irfftn if packed else np.fft.ifftn
             else:
