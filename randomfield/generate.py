@@ -229,6 +229,71 @@ class Generator(object):
 
         return delta
 
+
+    def measure_pk(self, data, kmin=None, kmax=None, Nk=100, relative=False):
+        """
+        Measures a power spectrum of the field in log spaced k bins
+
+        No new memory is allocated unless keep_field=True.
+
+        Parameters
+        ----------
+        field: numpy.narray
+             input field
+        kmin : float, optional
+             kmin to use, if None, use box baseline
+        kmax : float, optional
+             kmax to use, if None, use maxk based on box
+        Nk   : integer, default=100
+               number of k bins
+        relative : bool, optional
+              if true, subctract and then divide by mean
+        Returns
+        -------
+        tuple(kvec, Pk, Pke):
+            tuple of 3 1d arrays with k-values, Pk and error on Pk assuming gaussianity
+            units should be the same as self.power
+        """
+        planr2c=self.plan_c2r.create_reverse_plan(reuse_output=True)
+        planr2c.data_in[:,:,:]=data ## will this work?
+        dkmin, dkmax=powertools.get_k_bounds(planr2c.data_out, spacing=self.grid_spacing_Mpc_h, packed=True)
+        if (kmin==None):
+            kmin=dkmin
+        if (kmax==None):
+            kmax=dkmax
+        planr2c.execute()
+        kx2,ky2,kz2=powertools.create_ksq_grids(planr2c.data_out,spacing=self.grid_spacing_Mpc_h, packed=True,
+                                                meshgrid=False)
+        nx,ny,nz=map(len, [kx2,ky2,kz2])
+        lkmin,lkmax=np.log(kmin),np.log(kmax)
+        lkstep=(lkmax-lkmin)/Nk
+        data_out=planr2c.data_out
+        sums=np.zeros((Nk))
+        sw=np.zeros((Nk))
+        assert (data_out.shape==(nx,ny,nz))
+        for i in xrange(nx):
+            ckx2=kx2[i]
+            for j in xrange(ny):
+                cky2=ky2[j]
+                for k in xrange(nz):
+                    ckz2=kz2[k]
+                    # log(sqrt(x)) = 0.5 log(x)
+                    lk=0.5*np.log(ckx2+cky2+ckz2)
+                    if (lk<lkmin) or (lk>=lkmax):
+                        continue
+                    ndx=(lk-lkmin)/lkstep
+                    sums[ndx]+=abs(data_out[i,j,k])**2
+                    sw[ndx]+=1.0
+        ks=[np.exp(lkmin+(i+0.5)*lkstep) for i in range(Nk)]
+        norm=1/(2.*nx*ny*nz)
+        # for relative measurement, we divide by mean, which is k=0 of FFT
+        if relative:
+            norm/=(2*data_out[0,0,0].real*norm)
+        Pk=sums/sw*norm
+        Pke=Pk*np.sqrt(2/sw)
+        return (ks,Pk,Pke)
+        
+        
     def convert_delta_to_density(self, apply_lognormal_transform=True,
                                  show_plot=False, save_plot_name=None):
         """

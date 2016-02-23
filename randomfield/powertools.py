@@ -24,7 +24,11 @@ def get_k_bounds(data, spacing, packed=True):
     return k_min, k_max
 
 
-def create_ksq_grids(data, spacing, packed):
+def create_ksq_grids(data, spacing, packed, meshgrid=True):
+    """
+    Returns k^2 fields for three coordinates, either mesgridded
+    or not
+    """
     nx, ny, nz = transform.expanded_shape(data, packed=packed)
     lambda0 = spacing / (2 * np.pi)
     kx = np.fft.fftfreq(nx, lambda0)
@@ -34,7 +38,10 @@ def create_ksq_grids(data, spacing, packed):
         kz = kz[:nz//2 + 1]
     # With the sparse option, the memory usage of these grids is
     # O(nx+ny+nz) rather than O(nx*ny*nz).
-    return np.meshgrid(kx**2, ky**2, kz**2, sparse=True, indexing='ij')
+    if (meshgrid):
+        return np.meshgrid(kx**2, ky**2, kz**2, sparse=True, indexing='ij')
+    else:
+        return kx**2, ky**2, kz**2
 
 
 def fill_with_log10k(data, spacing, packed=True):
